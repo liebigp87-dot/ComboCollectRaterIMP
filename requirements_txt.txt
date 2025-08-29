@@ -1,0 +1,74 @@
+# Enhanced YouTube Collection & Rating Tool Requirements
+# Updated for Invidious API integration and enhanced scoring system
+
+# Core Streamlit framework
+streamlit>=1.28.0
+
+# Data manipulation and analysis
+pandas>=2.1.0
+numpy>=1.24.0
+
+# Google APIs and authentication
+google-api-python-client>=2.100.0
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+
+# Google Sheets integration
+gspread>=5.12.0
+
+# HTTP requests and API handling
+requests>=2.31.0
+urllib3>=2.0.4
+
+# Date and time handling
+isodate>=0.6.1
+python-dateutil>=2.8.2
+
+# Image processing (for thumbnails)
+Pillow>=10.0.0
+
+# Video processing dependencies (for future modules)
+yt-dlp>=2023.10.13
+ffmpeg-python>=0.2.0
+
+# Data validation and parsing
+python-dotenv>=1.0.0
+
+# Logging and monitoring
+structlog>=23.2.0
+
+# JSON handling
+ujson>=5.8.0
+
+# Regex and text processing
+regex>=2023.10.3
+
+# Mathematical operations
+scipy>=1.11.0
+
+# Error handling and retry logic
+tenacity>=8.2.0
+
+# Rate limiting
+ratelimit>=2.2.1
+
+# Configuration management
+pydantic>=2.4.0
+
+# Optional: Enhanced development and debugging
+# Uncomment for development environment
+
+# ipython>=8.15.0
+# jupyter>=1.0.0
+# pytest>=7.4.0
+# black>=23.9.0
+# flake8>=6.0.0
+
+# Performance optimization (optional)
+# uvloop>=0.18.0  # Linux/macOS only
+# orjson>=3.9.0   # Faster JSON processing
+
+# Additional utility libraries
+typing-extensions>=4.8.0
+dataclasses-json>=0.6.1
