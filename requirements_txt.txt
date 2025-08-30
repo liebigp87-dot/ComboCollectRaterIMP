@@ -1,63 +1,37 @@
-# Enhanced YouTube Collection & Rating Tool - Streamlit Cloud Version
-# Optimized for 1-2 concurrent users with guaranteed rate limiting and autorefresh
-
-# Core Streamlit framework
+# Core Dependencies
 streamlit>=1.28.0
+streamlit-autorefresh>=1.0.1
 
-# Autorefresh component for continuous processing
-streamlit-autorefresh>=0.0.1
-
-# Data manipulation and analysis
-pandas>=2.1.0
-numpy>=1.24.0
-
-# Google APIs and authentication
+# Google/YouTube APIs
 google-api-python-client>=2.100.0
 google-auth>=2.23.0
 google-auth-oauthlib>=1.1.0
-google-auth-httplib2>=0.1.1
+google-auth-httplib2>=0.1.0
+gspread>=5.11.0
 
-# Google Sheets integration
-gspread>=5.12.0
-
-# HTTP requests and API handling
-requests>=2.31.0
-urllib3>=2.0.4
-
-# Date and time handling
+# Video Processing
+yt-dlp>=2023.11.16
 isodate>=0.6.1
-python-dateutil>=2.8.2
 
-# Image processing (for thumbnails)
-Pillow>=10.0.0
+# Data Processing
+pandas>=2.1.0
+numpy>=1.24.0
+requests>=2.31.0
 
-# Data validation and parsing
-python-dotenv>=1.0.0
+# Optional but recommended for enhanced features
+Pillow>=10.0.0  # For image processing
+python-dotenv>=1.0.0  # For .env file handling
 
-# JSON handling optimized for performance
-ujson>=5.8.0
+# For process_runner.py (if using)
+# Note: ffmpeg must be installed separately via system package manager
+# Ubuntu/Debian: sudo apt install ffmpeg
+# macOS: brew install ffmpeg
+# Windows: Download from https://ffmpeg.org/download.html
 
-# Regex and text processing
-regex>=2023.10.3
+# Development/Testing (optional)
+pytest>=7.4.0
+black>=23.0.0
+flake8>=6.0.0
 
-# Mathematical operations (lighter version)
-scipy>=1.11.0
-
-# Error handling and retry logic
-tenacity>=8.2.0
-
-# Configuration management
-pydantic>=2.4.0
-
-# Performance optimization for JSON processing
-orjson>=3.9.0
-
-# Additional utility libraries
-typing-extensions>=4.8.0
-dataclasses-json>=0.6.1
-
-# Memory and system monitoring
-psutil>=5.9.0
-
-# Collections for deque in rate limiting
-# (included in Python standard library, no pip install needed)
+# Logging and monitoring (optional)
+python-json-logger>=2.0.7
