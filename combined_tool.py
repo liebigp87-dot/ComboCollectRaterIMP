@@ -21,36 +21,45 @@ import io
 import asyncio
 from urllib.parse import unquote
 
-# Streamlit autorefresh for graceful UI updates
+# Import with fallbacks for Streamlit Cloud compatibility
 try:
     from streamlit_autorefresh import st_autorefresh
     AUTOREFRESH_AVAILABLE = True
 except ImportError:
     AUTOREFRESH_AVAILABLE = False
-    st.warning("streamlit-autorefresh not installed. Install with: pip install streamlit-autorefresh")
+    # Create dummy function if not available
+    def st_autorefresh(interval=30000, key=None, limit=None, debounce=True):
+        return 0
 
-# YouTube API (fallback)
 try:
     from googleapiclient.discovery import build
     from googleapiclient.errors import HttpError
+    YOUTUBE_API_AVAILABLE = True
 except ImportError:
-    st.error("Please install google-api-python-client: pip install google-api-python-client")
-    st.stop()
-
-# Google Sheets integration
+    YOUTUBE_API_AVAILABLE = False
+    
 try:
     import gspread
     from google.oauth2.service_account import Credentials
+    SHEETS_AVAILABLE = True
 except ImportError:
-    st.error("Please install gspread and google-auth: pip install gspread google-auth")
-    st.stop()
-
-# ISO date parsing
+    SHEETS_AVAILABLE = False
+    
 try:
     import isodate
+    ISODATE_AVAILABLE = True
 except ImportError:
-    st.error("Please install isodate: pip install isodate")
-    st.stop()
+    ISODATE_AVAILABLE = False
+    # Create simple duration parser fallback
+    def parse_duration_simple(duration_str):
+        # Simple PT#M#S parser
+        import re
+        match = re.search(r'PT(?:(\d+)M)?(?:(\d+)S)?', duration_str)
+        if match:
+            minutes = int(match.group(1) or 0)
+            seconds = int(match.group(2) or 0)
+            return minutes * 60 + seconds
+        return 0
 
 # Page config
 st.set_page_config(
@@ -110,7 +119,19 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Initialize session state
-def init_session_state():
+def     # Check compatibility and show warnings
+    if not AUTOREFRESH_AVAILABLE:
+        st.warning("streamlit-autorefresh not available. Auto-refresh features disabled.")
+    
+    if not YOUTUBE_API_AVAILABLE:
+        st.warning("Google API client not available. YouTube API features disabled.")
+        
+    if not SHEETS_AVAILABLE:
+        st.error("Google Sheets integration not available. Please check requirements.txt")
+        st.stop()
+        
+    if not ISODATE_AVAILABLE:
+        st.warning("isodate not available. Using basic duration parsing."):
     defaults = {
         'collected_videos': [],
         'is_collecting': False,
@@ -295,17 +316,26 @@ class InvidiousCollector:
             response_time = time.time() - start_time
             
             if response.status_code == 200:
-                stats_data = response.json()
-                self.instance_health[instance_url].update({
-                    'status': 'healthy',
-                    'last_check': datetime.now(),
-                    'response_time': response_time,
-                    'consecutive_failures': 0,
-                    'last_success': datetime.now(),
-                    'last_error': None
-                })
-                self.failed_instances.discard(instance_url)
-                return True, stats_data
+                try:
+                    stats_data = response.json()
+                    # Validate it's actually JSON data
+                    if isinstance(stats_data, dict) and 'version' in stats_data:
+                        self.instance_health[instance_url].update({
+                            'status': 'healthy',
+                            'last_check': datetime.now(),
+                            'response_time': response_time,
+                            'consecutive_failures': 0,
+                            'last_success': datetime.now(),
+                            'last_error': None
+                        })
+                        self.failed_instances.discard(instance_url)
+                        return True, stats_data
+                    else:
+                        self._mark_instance_unhealthy(instance_url, "Invalid stats response format")
+                        return False, "Invalid stats response format"
+                except json.JSONDecodeError:
+                    self._mark_instance_unhealthy(instance_url, "Invalid JSON in stats response")
+                    return False, "Invalid JSON in stats response"
             else:
                 self._mark_instance_unhealthy(instance_url, f"HTTP {response.status_code}")
                 return False, f"HTTP {response.status_code}"
@@ -328,7 +358,7 @@ class InvidiousCollector:
             self.failed_instances.add(instance_url)
     
     def make_api_request(self, endpoint, params=None):
-        """Make API request with rate limiting and retry logic"""
+        """Make API request with comprehensive error handling and response validation"""
         if params is None:
             params = {}
         
@@ -352,11 +382,24 @@ class InvidiousCollector:
                                       })
                 
                 if response.status_code == 200:
-                    self.instance_health[instance]['successful_requests'] += 1
-                    self.instance_health[instance]['consecutive_failures'] = 0
-                    self.failed_instances.discard(instance)
-                    st.session_state.collector_stats['invidious_successes'] += 1
-                    return response.json(), None
+                    try:
+                        # Validate JSON response
+                        json_data = response.json()
+                        
+                        # Check if response is actually valid data
+                        if isinstance(json_data, (dict, list)) and json_data is not None:
+                            self.instance_health[instance]['successful_requests'] += 1
+                            self.instance_health[instance]['consecutive_failures'] = 0
+                            self.failed_instances.discard(instance)
+                            st.session_state.collector_stats['invidious_successes'] += 1
+                            return json_data, None
+                        else:
+                            self._mark_instance_unhealthy(instance, "Empty or invalid response data")
+                            continue
+                            
+                    except json.JSONDecodeError as e:
+                        self._mark_instance_unhealthy(instance, f"Invalid JSON response: {str(e)}")
+                        continue
                 
                 elif response.status_code == 500:
                     self._mark_instance_unhealthy(instance, f"Server error: {response.status_code}")
@@ -379,15 +422,8 @@ class InvidiousCollector:
         
         return None, "All Invidious instances failed"
     
-    def fetch_video_metadata(self, video_id):
-        """Fetch comprehensive video metadata"""
-        data, error = self.make_api_request(f"/api/v1/videos/{video_id}")
-        if error:
-            return None, error
-        return data, None
-    
     def search_videos(self, query, max_results=25):
-        """Search videos using Invidious API"""
+        """Search videos using Invidious API with robust response handling"""
         params = {
             'q': query,
             'type': 'video',
@@ -400,9 +436,65 @@ class InvidiousCollector:
         if error:
             return []
         
-        return data if isinstance(data, list) else []
+        # Validate search response format
+        if isinstance(data, list):
+            # Filter out invalid entries
+            valid_results = []
+            for item in data:
+                if isinstance(item, dict) and item.get('videoId'):
+                    valid_results.append(item)
+            return valid_results
+        elif isinstance(data, dict) and 'items' in data:
+            # Handle YouTube-style response format
+            return data.get('items', [])
+        else:
+            return []
     
-    def get_instance_stats(self):
+    def fetch_video_metadata(self, video_id):
+        """Fetch comprehensive video metadata with format validation"""
+        data, error = self.make_api_request(f"/api/v1/videos/{video_id}")
+        
+        if error:
+            return None, error
+            
+        # Validate metadata format
+        if not isinstance(data, dict):
+            return None, "Invalid metadata format (not a dictionary)"
+            
+        # Check for required fields
+        required_fields = ['videoId', 'title']
+        missing_fields = [field for field in required_fields if not data.get(field)]
+        
+        if missing_fields:
+            return None, f"Missing required fields: {', '.join(missing_fields)}"
+        
+        return data, None
+    
+    def validate_all_instances(self):
+        """Validate all Invidious instances before starting collection"""
+        healthy_instances = 0
+        for instance in self.instances:
+            is_healthy, result = self.check_instance_health(instance)
+            if is_healthy:
+                healthy_instances += 1
+                self.add_log(f"Instance {instance.replace('https://', '')} is healthy", "SUCCESS")
+            else:
+                self.add_log(f"Instance {instance.replace('https://', '')} failed: {result}", "WARNING")
+        
+        if healthy_instances == 0:
+            return False, "No healthy Invidious instances available"
+        
+        return True, f"{healthy_instances}/{len(self.instances)} instances healthy"
+    
+    def test_search_capability(self, test_query="test"):
+        """Test search functionality on healthy instances"""
+        for attempt in range(3):
+            results = self.search_videos(test_query, max_results=1)
+            if results and len(results) > 0:
+                return True, "Search functionality working"
+            time.sleep(1)
+        
+        return False, "Search functionality not working on any instance"
         """Get comprehensive instance health statistics"""
         stats = {}
         for instance, health in self.instance_health.items():
@@ -697,14 +789,21 @@ class EnhancedVideoCollector:
         st.session_state.logs = st.session_state.logs[:100]
     
     def validate_video_enhanced(self, video_data: Dict, target_category: str, require_captions: bool = True):
-        """Enhanced validation with both Invidious and YouTube data"""
-        video_id = video_data.get('videoId') or video_data.get('id', {}).get('videoId')
+        """Enhanced validation with comprehensive data type checking"""
+        # Ensure video_data is a dictionary
+        if not isinstance(video_data, dict):
+            return False, f"Invalid video data format: expected dict, got {type(video_data)}"
+        
+        video_id = video_data.get('videoId') or video_data.get('id', {}).get('videoId') if isinstance(video_data.get('id'), dict) else None
         
         if not video_id:
             return False, "No video ID found"
         
         video_url = f"https://youtube.com/watch?v={video_id}"
         title = video_data.get('title', '')
+        
+        if not isinstance(title, str):
+            return False, f"Invalid title format: expected string, got {type(title)}"
         
         self.add_log(f"Starting enhanced validation for: {title[:50]}...")
         
@@ -718,10 +817,16 @@ class EnhancedVideoCollector:
         if video_url in self.discarded_urls:
             return False, "Already processed (discarded)"
         
-        # Duration check
-        duration_seconds = video_data.get('lengthSeconds', 0)
-        if isinstance(duration_seconds, str):
-            duration_seconds = int(duration_seconds)
+        # Duration check with safe conversion
+        duration_seconds = 0
+        duration_raw = video_data.get('lengthSeconds', 0)
+        
+        if isinstance(duration_raw, (int, float)):
+            duration_seconds = int(duration_raw)
+        elif isinstance(duration_raw, str) and duration_raw.isdigit():
+            duration_seconds = int(duration_raw)
+        else:
+            return False, f"Invalid duration format: {duration_raw}"
         
         if duration_seconds < 90:
             return False, f"Too short ({duration_seconds}s < 90s)"
@@ -729,17 +834,30 @@ class EnhancedVideoCollector:
         if duration_seconds > 600:  # 10 minutes
             return False, f"Too long ({duration_seconds}s > 600s)"
         
-        # View count check
-        view_count = int(video_data.get('viewCount', 0))
+        # View count check with safe conversion
+        view_count = 0
+        view_count_raw = video_data.get('viewCount', 0)
+        
+        try:
+            if isinstance(view_count_raw, (int, float)):
+                view_count = int(view_count_raw)
+            elif isinstance(view_count_raw, str):
+                # Remove commas and convert
+                view_count = int(view_count_raw.replace(',', '').replace(' ', ''))
+            else:
+                return False, f"Invalid view count format: {view_count_raw}"
+        except (ValueError, AttributeError):
+            return False, f"Could not parse view count: {view_count_raw}"
+        
         if view_count < 10000:
             return False, f"View count too low ({view_count:,} < 10,000)"
         
-        # Category relevance (simplified for now)
-        title_lower = title.lower()
+        # Category relevance check
+        title_lower = title.lower() if isinstance(title, str) else ""
         category_keywords = {
-            'heartwarming': ['heartwarming', 'touching', 'emotional', 'reunion', 'surprise'],
-            'funny': ['funny', 'comedy', 'humor', 'hilarious', 'laugh'],
-            'traumatic': ['accident', 'disaster', 'emergency', 'rescue', 'shocking']
+            'heartwarming': ['heartwarming', 'touching', 'emotional', 'reunion', 'surprise', 'wholesome'],
+            'funny': ['funny', 'comedy', 'humor', 'hilarious', 'laugh', 'entertaining'],
+            'traumatic': ['accident', 'disaster', 'emergency', 'rescue', 'shocking', 'dramatic']
         }
         
         keywords = category_keywords.get(target_category, [])
@@ -825,52 +943,136 @@ class EnhancedVideoCollector:
         return collected
     
     def get_video_metadata_enhanced(self, video_id: str):
-        """Get metadata with Invidious primary, YouTube fallback"""
+        """Get metadata with robust error handling and format validation"""
         # Try Invidious first
         metadata, error = self.invidious_collector.fetch_video_metadata(video_id)
         
-        if metadata:
+        if metadata and isinstance(metadata, dict):
+            self.add_log(f"Successfully got Invidious metadata for {video_id}", "SUCCESS")
             return metadata
         
+        if error:
+            self.add_log(f"Invidious metadata failed for {video_id}: {error}", "WARNING")
+        
         # Fallback to YouTube
-        if self.youtube_collector:
-            self.add_log(f"Invidious metadata failed for {video_id}, trying YouTube fallback", "WARNING")
+        if self.youtube_collector and YOUTUBE_API_AVAILABLE:
+            self.add_log(f"Trying YouTube fallback for {video_id}", "INFO")
             metadata, error = self.youtube_collector.fetch_video_metadata_fallback(video_id)
-            if metadata:
-                return metadata
+            
+            if metadata and isinstance(metadata, dict):
+                # Convert YouTube API format to Invidious-like format
+                converted_metadata = self.convert_youtube_to_invidious_format(metadata)
+                self.add_log(f"Successfully got YouTube metadata for {video_id}", "SUCCESS")
+                return converted_metadata
+            
+            if error:
+                self.add_log(f"YouTube metadata also failed for {video_id}: {error}", "ERROR")
         
         self.add_log(f"All metadata sources failed for {video_id}", "ERROR")
         return None
     
-    def prepare_enhanced_video_record(self, metadata: Dict, category: str, query: str) -> Dict:
-        """Prepare enhanced video record with additional fields"""
-        video_id = metadata.get('videoId') or metadata.get('id')
+    def convert_youtube_to_invidious_format(self, youtube_data: Dict) -> Dict:
+        """Convert YouTube API response to Invidious-like format"""
+        if not isinstance(youtube_data, dict):
+            return {}
+            
+        snippet = youtube_data.get('snippet', {})
+        statistics = youtube_data.get('statistics', {})
+        content_details = youtube_data.get('contentDetails', {})
         
-        # Extract additional Invidious-specific fields
+        # Parse duration
+        duration_seconds = 0
+        if content_details.get('duration'):
+            try:
+                if ISODATE_AVAILABLE:
+                    duration_obj = isodate.parse_duration(content_details['duration'])
+                    duration_seconds = int(duration_obj.total_seconds())
+                else:
+                    duration_seconds = parse_duration_simple(content_details['duration'])
+            except:
+                duration_seconds = 0
+        
+        # Convert to Invidious-like format
+        converted = {
+            'videoId': youtube_data.get('id', ''),
+            'title': snippet.get('title', ''),
+            'lengthSeconds': duration_seconds,
+            'viewCount': int(statistics.get('viewCount', 0)),
+            'likeCount': int(statistics.get('likeCount', 0)),
+            'commentCount': int(statistics.get('commentCount', 0)),
+            'publishedText': snippet.get('publishedAt', ''),
+            'author': snippet.get('channelTitle', ''),
+            'description': snippet.get('description', ''),
+            'keywords': snippet.get('tags', []),
+            'videoThumbnails': [
+                {'quality': 'default', 'url': f"https://i.ytimg.com/vi/{youtube_data.get('id', '')}/default.jpg"},
+                {'quality': 'high', 'url': f"https://i.ytimg.com/vi/{youtube_data.get('id', '')}/hqdefault.jpg"}
+            ],
+            'captions': [],  # Would need separate API call
+            'formatStreams': []  # Not available from basic API call
+        }
+        
+        return converted
+    
+    def prepare_enhanced_video_record(self, metadata: Dict, category: str, query: str) -> Dict:
+        """Prepare enhanced video record with safe data extraction"""
+        if not isinstance(metadata, dict):
+            return {}
+            
+        video_id = metadata.get('videoId') or metadata.get('id', '')
+        
+        # Safe extraction with type checking
+        def safe_int(value, default=0):
+            try:
+                if isinstance(value, (int, float)):
+                    return int(value)
+                elif isinstance(value, str):
+                    return int(value.replace(',', '').replace(' ', ''))
+                return default
+            except (ValueError, AttributeError):
+                return default
+        
+        def safe_str(value, default=''):
+            return str(value) if value is not None else default
+        
+        def safe_list(value, default=None):
+            if default is None:
+                default = []
+            return value if isinstance(value, list) else default
+        
+        # Extract data safely
         record = {
-            'video_id': video_id,
-            'title': metadata.get('title', ''),
+            'video_id': safe_str(video_id),
+            'title': safe_str(metadata.get('title', '')),
             'url': f"https://youtube.com/watch?v={video_id}",
-            'category': category,
-            'search_query': query,
-            'duration_seconds': int(metadata.get('lengthSeconds', 0)),
-            'view_count': int(metadata.get('viewCount', 0)),
-            'like_count': int(metadata.get('likeCount', 0)),
-            'comment_count': int(metadata.get('commentCount', 0)),
-            'published_at': metadata.get('publishedText', ''),
-            'channel_title': metadata.get('author', ''),
-            'tags': ','.join(metadata.get('keywords', [])),
+            'category': safe_str(category),
+            'search_query': safe_str(query),
+            'duration_seconds': safe_int(metadata.get('lengthSeconds', 0)),
+            'view_count': safe_int(metadata.get('viewCount', 0)),
+            'like_count': safe_int(metadata.get('likeCount', 0)),
+            'comment_count': safe_int(metadata.get('commentCount', 0)),
+            'published_at': safe_str(metadata.get('publishedText', '')),
+            'channel_title': safe_str(metadata.get('author', '')),
+            'tags': ','.join(safe_list(metadata.get('keywords', []))),
             'collected_at': datetime.now().isoformat(),
             
             # Enhanced fields
-            'full_description': metadata.get('description', ''),
-            'thumbnail_urls': json.dumps(metadata.get('videoThumbnails', [])),
-            'subtitle_languages': ','.join([cap.get('languageCode', '') for cap in metadata.get('captions', [])]),
-            'video_quality_available': ','.join([fmt.get('qualityLabel', '') for fmt in metadata.get('formatStreams', [])]),
+            'full_description': safe_str(metadata.get('description', '')),
+            'thumbnail_urls': json.dumps(safe_list(metadata.get('videoThumbnails', []))),
+            'subtitle_languages': ','.join([
+                safe_str(cap.get('languageCode', '')) 
+                for cap in safe_list(metadata.get('captions', [])) 
+                if isinstance(cap, dict)
+            ]),
+            'video_quality_available': ','.join([
+                safe_str(fmt.get('qualityLabel', '')) 
+                for fmt in safe_list(metadata.get('formatStreams', []))
+                if isinstance(fmt, dict)
+            ]),
             'collection_source': 'invidious' if 'lengthSeconds' in metadata else 'youtube_api',
-            'collection_instance_used': getattr(self.invidious_collector, 'current_instance_index', 'N/A'),
-            'collection_retry_count': 0,  # Could be enhanced
-            'api_response_time': 0,  # Could be enhanced
+            'collection_instance_used': str(getattr(self.invidious_collector, 'current_instance_index', 'N/A')),
+            'collection_retry_count': 0,
+            'api_response_time': 0,
             'metadata_completeness_score': self._calculate_completeness_score(metadata)
         }
         
