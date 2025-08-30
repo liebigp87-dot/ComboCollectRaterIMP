@@ -92,6 +92,30 @@ st.markdown("""
     .api-primary { background: #48bb78; color: white; }
     .api-fallback { background: #ed8936; color: white; }
     .api-failed { background: #f56565; color: white; }
+    
+    .refresh-indicator {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        margin-left: 8px;
+        transition: all 0.3s ease;
+        position: relative;
+    }
+    .refresh-active {
+        background-color: #22c55e;
+        box-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+        animation: pulse 0.5s ease-in-out;
+    }
+    .refresh-inactive {
+        background-color: #ef4444;
+        opacity: 0.6;
+    }
+    @keyframes pulse {
+        0% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.2); opacity: 0.8; }
+        100% { transform: scale(1); opacity: 1; }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -116,7 +140,9 @@ def init_session_state():
         'used_queries': set(),
         'system_status': {'type': None, 'message': ''},
         'batch_progress': {'current': 0, 'total': 0, 'results': []},
-        'invidious_instance_stats': {}
+        'invidious_instance_stats': {},
+        'refresh_counter': 0,  # Track autorefresh counter
+        'last_refresh_time': time.time()  # Track last refresh
     }
     
     for key, value in defaults.items():
@@ -173,6 +199,40 @@ def show_status_alert():
 
 def set_status(status_type: str, message: str):
     st.session_state.system_status = {'type': status_type, 'message': message}
+
+def show_refresh_indicator(refresh_count):
+    """Show autorefresh status indicator"""
+    if not AUTOREFRESH_AVAILABLE:
+        return
+    
+    current_time = time.time()
+    time_since_last = current_time - st.session_state.last_refresh_time
+    
+    # Update refresh tracking
+    if refresh_count > st.session_state.refresh_counter:
+        st.session_state.refresh_counter = refresh_count
+        st.session_state.last_refresh_time = current_time
+        is_active = True
+    else:
+        # Show as active if refresh happened recently (within 5 seconds)
+        is_active = time_since_last < 5
+    
+    # Display indicator
+    indicator_class = "refresh-active" if is_active else "refresh-inactive"
+    status_text = "Auto-refresh active" if is_active else "Auto-refresh idle"
+    
+    st.markdown(f"""
+    <div style="position: fixed; top: 10px; right: 10px; z-index: 9999; 
+         background: rgba(255,255,255,0.9); padding: 8px 12px; 
+         border-radius: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+         font-size: 12px; color: #333;">
+        {status_text}
+        <span class="refresh-indicator {indicator_class}"></span>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    return refresh_count
+
 
 def clear_status():
     st.session_state.system_status = {'type': None, 'message': ''}
@@ -728,12 +788,17 @@ class SimpleVideoCollector:
 
 
 def main():
-    # Configure autorefresh based on activity
+    # Configure autorefresh and show indicator
+    refresh_count = 0
+    
     if AUTOREFRESH_AVAILABLE:
         if st.session_state.is_collecting:
-            count = st_autorefresh(interval=3000, key="collector")
+            refresh_count = st_autorefresh(interval=3000, key="collector")
         else:
-            count = st_autorefresh(interval=30000, key="idle_monitor")
+            refresh_count = st_autorefresh(interval=30000, key="idle_monitor")
+        
+        # Show refresh indicator with blinking status
+        show_refresh_indicator(refresh_count)
     
     st.markdown("""
     <div class="main-header">
