@@ -119,19 +119,21 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Initialize session state
-def     # Check compatibility and show warnings
-    if not AUTOREFRESH_AVAILABLE:
-        st.warning("streamlit-autorefresh not available. Auto-refresh features disabled.")
+def init_session_state()
+
+# Check compatibility and show warnings
+if not AUTOREFRESH_AVAILABLE:
+    st.warning("streamlit-autorefresh not available. Auto-refresh features disabled.")
+
+if not YOUTUBE_API_AVAILABLE:
+    st.warning("Google API client not available. YouTube API features disabled.")
     
-    if not YOUTUBE_API_AVAILABLE:
-        st.warning("Google API client not available. YouTube API features disabled.")
-        
-    if not SHEETS_AVAILABLE:
-        st.error("Google Sheets integration not available. Please check requirements.txt")
-        st.stop()
-        
-    if not ISODATE_AVAILABLE:
-        st.warning("isodate not available. Using basic duration parsing."):
+if not SHEETS_AVAILABLE:
+    st.error("Google Sheets integration not available. Please check requirements.txt")
+    st.stop()
+    
+if not ISODATE_AVAILABLE:
+    st.warning("isodate not available. Using basic duration parsing."):
     defaults = {
         'collected_videos': [],
         'is_collecting': False,
