@@ -1,8 +1,11 @@
-# Enhanced YouTube Collection & Rating Tool Requirements
-# Updated for Invidious API integration and enhanced scoring system
+# Enhanced YouTube Collection & Rating Tool - Streamlit Cloud Version
+# Optimized for 1-2 concurrent users with guaranteed rate limiting and autorefresh
 
 # Core Streamlit framework
 streamlit>=1.28.0
+
+# Autorefresh component for continuous processing
+streamlit-autorefresh>=0.0.1
 
 # Data manipulation and analysis
 pandas>=2.1.0
@@ -28,47 +31,33 @@ python-dateutil>=2.8.2
 # Image processing (for thumbnails)
 Pillow>=10.0.0
 
-# Video processing dependencies (for future modules)
-yt-dlp>=2023.10.13
-ffmpeg-python>=0.2.0
-
 # Data validation and parsing
 python-dotenv>=1.0.0
 
-# Logging and monitoring
-structlog>=23.2.0
-
-# JSON handling
+# JSON handling optimized for performance
 ujson>=5.8.0
 
 # Regex and text processing
 regex>=2023.10.3
 
-# Mathematical operations
+# Mathematical operations (lighter version)
 scipy>=1.11.0
 
 # Error handling and retry logic
 tenacity>=8.2.0
 
-# Rate limiting
-ratelimit>=2.2.1
-
 # Configuration management
 pydantic>=2.4.0
 
-# Optional: Enhanced development and debugging
-# Uncomment for development environment
-
-# ipython>=8.15.0
-# jupyter>=1.0.0
-# pytest>=7.4.0
-# black>=23.9.0
-# flake8>=6.0.0
-
-# Performance optimization (optional)
-# uvloop>=0.18.0  # Linux/macOS only
-# orjson>=3.9.0   # Faster JSON processing
+# Performance optimization for JSON processing
+orjson>=3.9.0
 
 # Additional utility libraries
 typing-extensions>=4.8.0
 dataclasses-json>=0.6.1
+
+# Memory and system monitoring
+psutil>=5.9.0
+
+# Collections for deque in rate limiting
+# (included in Python standard library, no pip install needed)
